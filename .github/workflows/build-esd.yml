@@ -1,0 +1,57 @@
+name: Build Windows 11 install.esd
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-esd:
+    runs-on: windows-latest
+    timeout-minutes: 330
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show runner disk and version
+        shell: cmd
+        run: |
+          ver
+          wmic logicaldisk get caption,freespace,size
+
+      - name: Download UUP files and convert to ESD only
+        shell: cmd
+        working-directory: build
+        run: |
+          uup_download_windows.cmd 49127c4b-02dc-482e-ac4f-ec4d659b7547
+
+      - name: Collect the produced ESD
+        shell: powershell
+        run: |
+          Write-Host "== searching for *.esd =="
+          Get-ChildItem -Path build -Recurse -Filter *.esd | ForEach-Object {
+            Write-Host ("{0}  {1:N2} GB" -f $_.FullName, ($_.Length/1GB))
+          }
+          $esd = Get-ChildItem -Path build -Recurse -Filter *.esd | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $esd) { throw "No ESD file produced" }
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item $esd.FullName "out\install_26300.10066_amd64_zh-cn_professional.esd"
+          $final = Get-Item "out\install_26300.10066_amd64_zh-cn_professional.esd"
+          Write-Host ("FINAL: {0}  {1:N2} GB" -f $final.Name, ($final.Length/1GB))
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ESD built`n- 文件: install_26300.10066_amd64_zh-cn_professional.esd`n- 大小: $([math]::Round($final.Length/1GB,2)) GB"
+
+      - name: Free disk before upload
+        shell: cmd
+        run: |
+          if exist build\UUPs rmdir /s /q build\UUPs
+          if exist build\ISOFOLDER rmdir /s /q build\ISOFOLDER
+
+      - name: Upload ESD artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-esd-26300.10066
+          path: out/install_26300.10066_amd64_zh-cn_professional.esd
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
