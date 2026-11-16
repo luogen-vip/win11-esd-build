@@ -1,0 +1,21 @@
+Windows 11 26H2 LITE - install.esd（分片合并说明）
+
+本目录下的 install_lite_26300.10066.esd.00 / .01 / .02 是同一个文件的
+原始二进制分片（没有压缩，不是 zip，也没有加密），必须全部下载齐全，
+然后按下面方式合并成一个完整的 install.esd。
+
+【Windows / PE 命令行合并】
+把三个分片放在同一个文件夹，打开 CMD，执行（一行）：
+
+copy /b install_lite_26300.10066.esd.00+install_lite_26300.10066.esd.01+install_lite_26300.10066.esd.02 install.esd
+
+【PowerShell 合并】
+Get-Content install_lite_26300.10066.esd.00,install_lite_26300.10066.esd.01,install_lite_26300.10066.esd.02 -AsByteStream -ReadCount 0 | Set-Content install.esd -AsByteStream
+
+【校验】
+合并完成后，用 SHA256.txt 里的值核对 install.esd 的哈希，一致就说明合并没有出错。
+
+文件信息：
+- 版本 Windows 11 26H2 / 26300.10066 / amd64 / zh-cn / 专业版
+- 精简优化版：删除预装 UWP、关闭系统更新与遥测、关闭驱动更新、ResetBase 只保留最新累积补丁
+- 安装方式：PE（HotPE）里用 WinNTSetup 加载 install.esd
