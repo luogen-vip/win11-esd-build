@@ -1,0 +1,73 @@
+name: Publish Lite ESD as release parts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Download lite ESD artifact from build run
+        uses: actions/download-artifact@v4
+        with:
+          name: install-esd-lite-26300.10066
+          run-id: 43839721633
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: in
+
+      - name: Inspect
+        run: |
+          ls -la in
+          find in -name "*.esd" -exec ls -l {} \;
+
+      - name: Split ESD into raw binary parts (1800 MiB, no archive)
+        run: |
+          mkdir -p out
+          ESD=$(find in -name "*.esd" | head -1)
+          echo "source: $ESD"
+          split -b 1800M -d -a 2 --additional-suffix=.part "$ESD" out/install_lite_26300.10066.esd.
+          ls -lh out
+          sha256sum "$ESD" | awk '{print $1"  install_lite_26300.10066.esd"}' > out/SHA256.txt
+          cat in/optimize.log > out/optimize.log 2>/dev/null || true
+
+      - name: Write merge instructions
+        run: |
+          cat > out/合并说明.txt <<'EOF'
+Windows 11 26H2 LITE - install.esd（分片合并说明）
+
+本目录下的 install_lite_26300.10066.esd.00 / .01 / .02 是同一个文件的
+原始二进制分片（没有压缩，不是 zip，也没有加密），必须全部下载齐全，
+然后按下面方式合并成一个完整的 install.esd。
+
+【Windows / PE 命令行合并】
+把三个分片放在同一个文件夹，打开 CMD，执行：
+
+copy /b install_lite_26300.10066.esd.00+install_lite_26300.10066.esd.01+install_lite_26300.10066.esd.02 install.esd
+
+【PowerShell 合并】
+Get-Content install_lite_26300.10066.esd.00,install_lite_26300.10066.esd.01,install_lite_26300.10066.esd.02 -AsByteStream -ReadCount 0 | Set-Content install.esd -AsByteStream
+
+【校验】
+合并完成后，用 SHA256.txt 里的值核对 install.esd 的哈希，一致就说明合并成功、文件无损。
+
+文件信息：
+- 版本 Windows 11 26H2 / 26300.10066 / amd64 / zh-cn / 专业版
+- 精简 + 优化版（删除预装 UWP、关闭更新与遥测、ResetBase 只留最新补丁）
+EOF
+          ls -la out
+
+      - name: Create release and upload parts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete lite-esd-26300.10066 --yes --cleanup-tag 2>/dev/null || true
+          gh release create lite-esd-26300.10066 \
+            --title "Windows 11 26H2 LITE install.esd (26300.10066 简体中文专业版)" \
+            --notes "分片下载后按《合并说明.txt》用 copy /b 合并成 install.esd。免登录可直接下载。" \
+            --latest \
+            out/*
