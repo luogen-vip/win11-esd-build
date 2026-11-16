@@ -125,8 +125,8 @@ $badDrv = $drv | Where-Object {
     $_.OriginalFileName -match "printer|nvlddmkm|igdlh|oculus|vive"
 }
 foreach ($d in $badDrv) {
-    Log ("  removing driver: " + $d.ProviderName + " / " + $d.ClassName + " / " + $d.OriginalFileName)
-    try { Remove-WindowsDriver -Path $MountDir -Driver $d.OriginalFileName -ErrorAction Stop | Out-Null }
+    Log ("  removing driver: " + $d.Driver + " / " + $d.ProviderName + " / " + $d.ClassName)
+    try { Remove-WindowsDriver -Path $MountDir -Driver $d.Driver -ErrorAction Stop | Out-Null }
     catch { Log ("    [WARN] " + $_.Exception.Message) }
 }
 Log ("  drivers left: " + ((Get-WindowsDriver -Path $MountDir -All -ErrorAction SilentlyContinue | Measure-Object).Count))
@@ -299,7 +299,6 @@ dism /Image:"$MountDir" /Cleanup-Image /StartComponentCleanup /ResetBase /Quiet 
 Log ("  exit " + $LASTEXITCODE)
 
 # also drop old WinSxS backup left by app removals
-dism /Image:"$MountDir" /Cleanup-Image /SPSuperseded /Quiet | Out-Null
 
 # ---------------------------------------------------------------- 6. report languages
 Log "== Installed languages after edit =="
