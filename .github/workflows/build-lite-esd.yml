@@ -66,12 +66,17 @@ jobs:
       - name: Export to solid ESD
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Force -Path D:\out | Out-Null
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\out" | Out-Null
           dism /Export-Image /SourceImageFile:"$env:WIM_PATH" /SourceIndex:1 `
-               /DestinationImageFile:"D:\out\install_26300.10066_zh-cn_professional_LITE.esd" `
+               /DestinationImageFile:"$env:GITHUB_WORKSPACE\out\install_26300.10066_zh-cn_professional_LITE.esd" `
                /Compress:recovery /CheckIntegrity
           if ($LASTEXITCODE -ne 0) { throw "export failed $LASTEXITCODE" }
-          Get-Item "D:\out\*.esd" | ForEach-Object { Write-Host ("FINAL: {0}  {1:N2} GB" -f $_.Name, ($_.Length/1GB)) }
+          Get-Item "$env:GITHUB_WORKSPACE\out\*.esd" | ForEach-Object { Write-Host ("FINAL: {0}  {1:N2} GB" -f $_.Name, ($_.Length/1GB)) }
+
+      - name: Copy optimize log into workspace
+        shell: powershell
+        run: |
+          if (Test-Path D:\optimize.log) { Copy-Item D:\optimize.log "$env:GITHUB_WORKSPACE\out\optimize.log" }
 
       - name: Free disk before upload
         shell: cmd
@@ -83,9 +88,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: install-esd-lite-26300.10066
-          path: |
-            D:\out\install_26300.10066_zh-cn_professional_LITE.esd
-            D:\optimize.log
+          path: out/*
           compression-level: 0
           retention-days: 30
           if-no-files-found: error
