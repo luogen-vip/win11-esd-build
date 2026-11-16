@@ -15,10 +15,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Show runner disk and version
-        shell: cmd
+        shell: powershell
         run: |
-          ver
-          wmic logicaldisk get caption,freespace,size
+          $PSVersionTable.PSVersion
+          Get-PSDrive -PSProvider FileSystem | ForEach-Object {
+            Write-Host ("{0}: free {1:N1} GB / total {2:N1} GB" -f $_.Name, ($_.Free/1GB), (($_.Used+$_.Free)/1GB))
+          }
 
       - name: Download UUP files and convert to ESD only
         shell: cmd
