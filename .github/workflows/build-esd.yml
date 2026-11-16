@@ -2,8 +2,6 @@ name: Build Windows 11 install.esd
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build-esd:
