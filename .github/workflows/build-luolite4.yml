@@ -1,0 +1,115 @@
+name: Build LuoLite ISO v4
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: luolite4
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Disk info
+        shell: powershell
+        run: |
+          Get-PSDrive -PSProvider FileSystem | ForEach-Object {
+            Write-Host ("{0}: free {1:N1} GB" -f $_.Name, ($_.Free/1GB))
+          }
+
+      - name: Build ISO mode
+        shell: powershell
+        working-directory: build
+        run: |
+          $p = "ConvertConfig.ini"
+          (Get-Content $p) `
+            -replace '^wim2esd\s*=.*','wim2esd      =0' `
+            -replace '^SkipISO\s*=.*','SkipISO      =0' `
+            -replace '^AutoExit\s*=.*','AutoExit     =1' `
+            -replace '^AddUpdates\s*=.*','AddUpdates   =1' `
+            -replace '^Cleanup\s*=.*','Cleanup      =0' |
+            Set-Content $p
+          Get-Content $p
+
+      - name: Download UUP and build ISO
+        shell: cmd
+        working-directory: build
+        run: |
+          uup_download_windows.cmd 49127c4b-02dc-482e-ac4f-ec4d659b7547
+
+      - name: Locate ISO + install.wim
+        shell: powershell
+        run: |
+          $iso = Get-ChildItem -Path build -Recurse -Filter *.iso | Sort-Object Length -Descending | Select-Object -First 1
+          $wim = Get-ChildItem -Path build -Recurse -Filter install.wim | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $iso) { throw "ISO not found" }
+          if (-not $wim) { throw "install.wim not found" }
+          Write-Host ("ISO: {0} {1:N2} GB" -f $iso.FullName, ($iso.Length/1GB))
+          Write-Host ("WIM: {0} {1:N2} GB" -f $wim.FullName, ($wim.Length/1GB))
+          "ISO_PATH=" + $iso.FullName | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "WIM_PATH=" + $wim.FullName | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Debloat v4
+        shell: powershell
+        run: |
+          ./scripts/debloat-v4.ps1 -WimPath "$env:WIM_PATH" -MountDir "D:\mount4" -LogFile "D:\debloat4.log"
+
+      - name: Extract ISO to media folder
+        shell: powershell
+        run: |
+          $sevenZip = Get-ChildItem -Path build -Recurse -Filter 7zr.exe | Select-Object -First 1
+          if (-not $sevenZip) { throw "7zr.exe not found" }
+          New-Item -ItemType Directory -Force -Path "D:\media" | Out-Null
+          & $sevenZip.FullName x "$env:ISO_PATH" "-oD:\media" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "iso extract failed" }
+          Get-ChildItem D:\media | Select-Object Name
+
+      - name: Swap install.wim, free space
+        shell: powershell
+        run: |
+          Remove-Item -Force "$env:ISO_PATH" -ErrorAction SilentlyContinue
+          $target = "D:\media\sources\install.wim"
+          Remove-Item -Force $target -ErrorAction SilentlyContinue
+          Move-Item -Force "$env:WIM_PATH" $target
+          Get-Item $target | ForEach-Object { Write-Host ("media install.wim {0:N2} GB" -f ($_.Length/1GB)) }
+
+      - name: Rebuild bootable ISO
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\out" | Out-Null
+          $oscdimg = Get-ChildItem -Path build, "C:\Program Files (x86)" -Recurse -Filter oscdimg.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $oscdimg) {
+            Write-Host "oscdimg not found, fallback to ESD export"
+            dism /Export-Image /SourceImageFile:"D:\media\sources\install.wim" /SourceIndex:1 `
+                 /DestinationImageFile:"$env:GITHUB_WORKSPACE\out\LuoLite_26300.10066_zh-cn_Pro.esd" `
+                 /Compress:recovery /CheckIntegrity
+            exit 0
+          }
+          Write-Host ("oscdimg: " + $oscdimg.FullName)
+          & $oscdimg.FullName -m -o -u2 -udfver102 `
+            -bootdata:2#p0,e,b"D:\media\boot\etfsboot.com#pEF,e,bD:\media\efi\microsoft\boot\efisys.bin" `
+            "D:\media" "$env:GITHUB_WORKSPACE\out\LuoLite_26300.10066_zh-cn_Pro.iso"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "oscdimg failed $LASTEXITCODE, fallback to ESD"
+            dism /Export-Image /SourceImageFile:"D:\media\sources\install.wim" /SourceIndex:1 `
+                 /DestinationImageFile:"$env:GITHUB_WORKSPACE\out\LuoLite_26300.10066_zh-cn_Pro.esd" `
+                 /Compress:recovery /CheckIntegrity
+          }
+          Copy-Item D:\debloat4.log "$env:GITHUB_WORKSPACE\out\" -ErrorAction SilentlyContinue
+          Get-ChildItem "$env:GITHUB_WORKSPACE\out" | ForEach-Object { Write-Host ("OUT: {0} {1:N2} GB" -f $_.Name, ($_.Length/1GB)) }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luolite-iso-v4
+          path: out/*
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
+</application
