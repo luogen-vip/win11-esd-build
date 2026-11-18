@@ -1,0 +1,62 @@
+name: Publish v5 to filebin
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'source run id'
+        required: true
+        default: '44247318320'
+      artifact:
+        description: 'artifact name'
+        required: true
+        default: 'luolite5-esd'
+      bin:
+        description: 'filebin bin id'
+        required: true
+        default: 'luolite5v5a1b2c3d'
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Download artifact from source run
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: D:\dl
+
+      - name: Inspect
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse D:\dl | Select-Object FullName,Length | Format-Table -AutoSize
+
+      - name: Extract esd
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem D:\dl -Recurse -Filter *.zip | Select-Object -First 1
+          if ($zip) { Expand-Archive -Path $zip.FullName -DestinationPath D:\out -Force }
+          else { Copy-Item -Recurse D:\dl D:\out }
+          $esd = Get-ChildItem D:\out -Recurse -Filter *.esd | Select-Object -First 1
+          if (-not $esd) { throw "no esd found" }
+          Write-Host ("ESD: " + $esd.FullName + " " + $esd.Length)
+          $esd.FullName | Out-File D:\esdpath.txt -Encoding utf8
+
+      - name: Upload to filebin
+        shell: pwsh
+        run: |
+          $esd = (Get-Content D:\esdpath.txt).Trim()
+          $name = Split-Path $esd -Leaf
+          $bin = "${{ inputs.bin }}"
+          $url = "https://filebin.net/$bin/$name"
+          Write-Host "PUT $url"
+          $out = & curl.exe -s -S --retry 5 --retry-delay 10 --max-time 3600 -X POST `
+            -H "filename: $name" -H "Content-Type: application/octet-stream" `
+            --data-binary "@$esd" $url
+          Write-Host $out
+          $json = $out | ConvertFrom-Json
+          $id = $json.file.id
+          Write-Host "FILE_ID=$id"
+          Write-Host "LANDING=https://filebin.net/$bin/$name"
