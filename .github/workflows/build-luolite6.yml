@@ -1,0 +1,83 @@
+name: Build LuoLite v6 ESD
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: luolite6
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 340
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Runner info
+        shell: powershell
+        run: |
+          Get-PSDrive -PSProvider FileSystem | ForEach-Object {
+            Write-Host ("{0}: free {1:N1} GB" -f $_.Name, ($_.Free/1GB))
+          }
+
+      - name: WIM mode, no ISO
+        shell: powershell
+        working-directory: build
+        run: |
+          $p = "ConvertConfig.ini"
+          (Get-Content $p) `
+            -replace '^wim2esd\s*=.*','wim2esd      =0' `
+            -replace '^SkipISO\s*=.*','SkipISO      =1' `
+            -replace '^AutoExit\s*=.*','AutoExit     =1' `
+            -replace '^AddUpdates\s*=.*','AddUpdates   =1' `
+            -replace '^Cleanup\s*=.*','Cleanup      =0' |
+            Set-Content $p
+          Get-Content $p
+
+      - name: Download UUP and convert to install.wim
+        shell: cmd
+        working-directory: build
+        run: |
+          uup_download_windows.cmd 49127c4b-02dc-482e-ac4f-ec4d659b7547
+
+      - name: Locate install.wim
+        shell: powershell
+        run: |
+          $wim = Get-ChildItem -Path build -Recurse -Filter install.wim | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $wim) { throw "install.wim not found" }
+          Write-Host ("WIM: {0}  {1:N2} GB" -f $wim.FullName, ($wim.Length/1GB))
+          "WIM_PATH=" + $wim.FullName | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Debloat offline (LuoLite v6)
+        shell: powershell
+        run: |
+          ./scripts/debloat-v6.ps1 -WimPath "$env:WIM_PATH" -MountDir "D:\mount6" -LogFile "D:\debloat6.log" 
+
+      - name: Export to solid ESD
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\out" | Out-Null
+          dism /Export-Image /SourceImageFile:"$env:WIM_PATH" /SourceIndex:1 `
+               /DestinationImageFile:"$env:GITHUB_WORKSPACE\out\LuoLite6_26300.10066_zh-cn_Pro.esd" `
+               /Compress:recovery /CheckIntegrity
+          if ($LASTEXITCODE -ne 0) { throw "export failed $LASTEXITCODE" }
+          Get-Item "$env:GITHUB_WORKSPACE\out\*.esd" | ForEach-Object { Write-Host ("FINAL: {0}  {1:N2} GB" -f $_.Name, ($_.Length/1GB)) }
+          Copy-Item D:\debloat6.log "$env:GITHUB_WORKSPACE\out\debloat6.log"
+
+      - name: Free disk
+        shell: cmd
+        run: |
+          if exist build\UUPs rmdir /s /q build\UUPs
+          if exist "D:\mount" rmdir /s /q "D:\mount"
+
+      - name: Upload ESD
+        uses: actions/upload-artifact@v4
+        with:
+          name: luolite6-esd
+          path: out/*
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
