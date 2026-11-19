@@ -1,0 +1,44 @@
+name: Extract ESD from ISO artifact
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Download ISO artifact
+        shell: powershell
+        run: |
+          $h = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json" }
+          Invoke-WebRequest -Uri "https://api.github.com/repos/luogen-vip/win11-esd-build/actions/artifacts/14512151311/zip" -Headers $h -OutFile D:\iso-art.zip -MaximumRedirection 10
+          Get-Item D:\iso-art.zip | ForEach-Object { Write-Host ("zip {0:N2} GB" -f ($_.Length/1GB)) }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Unzip ISO
+        shell: powershell
+        run: |
+          & 7z x -y -o"D:\iso-files" D:\iso-art.zip | Select-Object -Last 3
+          Get-ChildItem D:\iso-files | Select-Object Name,Length
+
+      - name: Extract install.esd only
+        shell: powershell
+        run: |
+          $iso = Get-ChildItem D:\iso-files -Filter *.iso | Select-Object -First 1
+          if (-not $iso) { throw "iso missing" }
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\out" | Out-Null
+          & 7z e -y -o"$env:GITHUB_WORKSPACE\out" $iso.FullName "sources/install.esd" | Select-Object -Last 3
+          $f = Get-ChildItem "$env:GITHUB_WORKSPACE\out" -Filter *.esd | Select-Object -First 1
+          if (-not $f) { throw "esd not extracted" }
+          Rename-Item $f.FullName "LuoMicro9_26300.10066_zh-cn_Pro.esd" -Force
+          Get-ChildItem "$env:GITHUB_WORKSPACE\out" | ForEach-Object { Write-Host ("FINAL: {0}  {1:N2} GB" -f $_.Name, ($_.Length/1GB)) }
+
+      - name: Upload ESD
+        uses: actions/upload-artifact@v4
+        with:
+          name: luomicro9-esd-only
+          path: out/*
+          compression-level: 0
+          retention-days: 3
