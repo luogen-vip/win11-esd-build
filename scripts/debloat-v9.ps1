@@ -36,7 +36,8 @@ $dr = Join-Path $MountDir "Windows\System32\DriverStore\FileRepository"
 $keepPat = @("basicdisplay","basicrender","disk.inf","usb","usbport","usbstor","usbccgp","usbhub",
  "hid","hiddigi","kbd","mouse","net","storahci","stornvme","storport","storvsc","vhdmp",
  "volume","partmgr","pci","acpi","processor","intelppm","amdppm","cmbatt","battery",
- "hdaudio","audio","ksfilter","swenum","umpass","sfloppy","cdrom","msft")
+ "hdaudio","audio","ksfilter","swenum","umpass","sfloppy","cdrom","msft",
+ "bth","bluetooth","wlan","wifi","sdhost","uart","serial","monitor","camera")
 if (Test-Path $dr) {
   $before = (Get-ChildItem -LiteralPath $dr -Force -ErrorAction SilentlyContinue | Measure-Object).Count
   Get-ChildItem -LiteralPath $dr -Force -ErrorAction SilentlyContinue | Where-Object PSIsContainer | ForEach-Object {
