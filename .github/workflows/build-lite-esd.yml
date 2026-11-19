@@ -2,12 +2,6 @@ name: Build Windows 11 Lite ESD
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - 'scripts/**'
-      - '.github/workflows/build-lite-esd.yml'
-      - 'build/**'
 
 concurrency:
   group: lite-esd
